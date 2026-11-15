@@ -1,0 +1,27 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: pytest and ruff
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7.0.1
+      - name: Install poppler
+        run: sudo apt-get update -q && sudo apt-get install -y -q poppler-utils
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Tests
+        run: |
+          uv sync --frozen
+          uv run pytest -q
+      - name: Lint
+        run: uvx ruff check src tests

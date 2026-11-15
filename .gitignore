@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+/build/
+/dist/
+/data/
+wifi_survey/wheels/
+wifi_survey/requirements.txt
+android/.gradle/
+android/app/build/
+android/local.properties

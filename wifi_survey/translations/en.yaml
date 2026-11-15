@@ -1,0 +1,12 @@
+configuration:
+  fritzbox_host:
+    name: FRITZ!Box address
+    description: Host name or IP address of the FRITZ!Box (mesh master), e.g. fritz.box or 192.168.178.1.
+  fritzbox_user:
+    name: FRITZ!Box user
+    description: User for measurement runs (TR-064). "Allow access for applications" must be enabled on the FRITZ!Box.
+  fritzbox_password:
+    name: FRITZ!Box password
+    description: Password of this user. Without access you can edit plans and import projects, but not start measurement runs.
+network:
+  8099/tcp: Direct access without login, only for the Android measuring app (e.g. 8770). Leave empty if you do not measure with a phone.

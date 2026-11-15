@@ -1,0 +1,12 @@
+configuration:
+  fritzbox_host:
+    name: FRITZ!Box-Adresse
+    description: Name oder IP-Adresse der FRITZ!Box (Mesh-Master), z. B. fritz.box oder 192.168.178.1.
+  fritzbox_user:
+    name: FRITZ!Box-Benutzer
+    description: Benutzer für den Messlauf (TR-064). In der FRITZ!Box muss „Zugriff für Anwendungen zulassen“ eingeschaltet sein.
+  fritzbox_password:
+    name: FRITZ!Box-Passwort
+    description: Passwort dieses Benutzers. Ohne Zugang lassen sich Pläne bearbeiten und Projekte importieren, aber keine Messläufe starten.
+network:
+  8099/tcp: Direktzugriff ohne Anmeldung, nur für die Android-App zum Messen (z. B. 8770). Leer lassen, wenn du nicht mit dem Handy misst.
