@@ -44,6 +44,8 @@ jobs:
           NAME: ${{ steps.info.outputs.name }}
           DESCRIPTION: ${{ steps.info.outputs.description }}
         run: |
+          # the info helper returns JSON strings ("…"); drop the quotes
+          IMAGE=${IMAGE//\"/}; VERSION=${VERSION//\"/}; NAME=${NAME//\"/}; DESCRIPTION=${DESCRIPTION//\"/}
           echo "image_name=${IMAGE##*/}" >> "$GITHUB_OUTPUT"
           echo "registry_prefix=${IMAGE%/*}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
