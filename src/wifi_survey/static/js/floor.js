@@ -812,12 +812,26 @@ export class FloorView {
     if (this.tool === 'rooms') this.renderAll();
   }
 
+  roomColors() {
+    const rooms = this.roomsInfo?.rooms;
+    if (!rooms?.length) return [];
+    if (!this.roomsInfo._colors) {
+      const gap = this.ppm ? this.ppm * 1.4 : 60;
+      this.roomsInfo._colors = G.assignRoomColors(rooms, gap, 6);
+    }
+    return this.roomsInfo._colors;
+  }
+
   roomsDown(e, w) {
-    const hit = (this.roomsInfo?.rooms || []).find((r) => r.contours.some((pg) => G.inPolygon(w, pg)));
+    const hit = (this.roomsInfo?.rooms || []).find((r) => G.inRoomContours(w, r.contours));
     this.selRoom = hit ? hit.id : null;
     this.renderRooms();
     this.renderPanel();
-    if (hit) document.querySelector(`#panel .room-row[data-room='${hit.id}'] input`)?.focus();
+    const row = hit && document.querySelector(`#panel .room-row[data-room='${hit.id}']`);
+    if (row) {
+      row.scrollIntoView({ block: 'nearest' });
+      if (e.pointerType !== 'touch' && window.innerWidth > 760) row.querySelector('input')?.focus();
+    }
     return 'pan';
   }
 
@@ -827,14 +841,60 @@ export class FloorView {
     g.replaceChildren();
     top.replaceChildren();
     if (this.tool !== 'rooms' || !this.roomsInfo?.rooms) return;
+    const rooms = this.roomsInfo.rooms;
+    const colors = this.roomColors();
     const px = (n) => this.vp.px(n);
-    for (const r of this.roomsInfo.rooms) {
+
+    // Zuerst alle nicht gewählten Räume, danach den gewählten Raum samt Kontur-Rahmen obenauf
+    const order = rooms.map((r, i) => ({ r, ci: colors[i] ?? (i % 6) }));
+    for (const { r, ci } of order) {
+      if (this.selRoom === r.id) continue;
       for (const pg of r.contours) {
-        el('polygon', { points: G.pointsAttr(pg), class: `room-poly${this.selRoom === r.id ? ' selected' : ''}`, 'data-room': r.id }, g);
+        el('polygon', { points: G.pointsAttr(pg), class: `room-poly room-color-${ci}`, 'data-room': r.id }, g);
       }
-      const t = el('text', { x: r.anchor[0], y: r.anchor[1], class: 'room-label', 'font-size': px(13) }, top);
-      t.textContent = r.name;
     }
+    for (const { r, ci } of order) {
+      if (this.selRoom !== r.id) continue;
+      for (const pg of r.contours) {
+        el('polygon', { points: G.pointsAttr(pg), class: 'room-poly-casing' }, g);
+        el('polygon', { points: G.pointsAttr(pg), class: `room-poly room-color-${ci} selected`, 'data-room': r.id }, g);
+      }
+    }
+
+    // Sperrflächen durch Geräte und deren Beschriftung vormerken
+    const boxes = [];
+    const showDevLabels = this.opts.showDeviceLabels !== false && (this.vp.s >= 0.55 || this.tool === 'devices');
+    for (const d of this.devices) {
+      const dr = px(12);
+      boxes.push({ x0: d.pos[0] - dr, y0: d.pos[1] - dr, x1: d.pos[0] + dr, y1: d.pos[1] + dr });
+      if (showDevLabels || d.kind === 'ap') {
+        const tw = d.label.length * px(6.8);
+        boxes.push({ x0: d.pos[0] + px(11), y0: d.pos[1] - px(8), x1: d.pos[0] + px(15) + tw, y1: d.pos[1] + px(8) });
+      }
+    }
+
+    // Raumnamen als Pillen überlappungs- und wandfrei platzieren (gewählter Raum hat Vorrang)
+    const labelOrder = [...rooms].sort((a, b) => (b.id === this.selRoom) - (a.id === this.selRoom) || b.area_m2 - a.area_m2);
+    let selLabel = null;
+    for (const r of labelOrder) {
+      const isSel = this.selRoom === r.id;
+      const grp = el('g', { class: `room-label-group${isSel ? ' current' : ''}` }, top);
+      const pill = el('rect', { class: 'room-label-pill', rx: px(5), ry: px(5) }, grp);
+      const t = el('text', { x: 0, y: 0, class: 'room-label', 'font-size': px(12) }, grp);
+      t.textContent = r.name;
+      const tw = (typeof t.getComputedTextLength === 'function' ? t.getComputedTextLength() : 0) || r.name.length * px(7.2);
+      const pw = tw + px(14);
+      const ph = px(20);
+      const [cx, cy] = G.placeRoomLabel(boxes, r, pw, ph, px, this.walls);
+      pill.setAttribute('x', cx - pw / 2);
+      pill.setAttribute('y', cy - ph / 2);
+      pill.setAttribute('width', pw);
+      pill.setAttribute('height', ph);
+      t.setAttribute('x', cx);
+      t.setAttribute('y', cy);
+      if (isSel) selLabel = grp;
+    }
+    if (selLabel) top.appendChild(selLabel);
   }
 
   // Eigener Name für einen Raum: ein Namensschild an seinem Ankerpunkt; andere Schilder im selben Raum fallen weg
@@ -860,24 +920,70 @@ export class FloorView {
     const info = this.roomsInfo;
     if (!info) { div(s, 'small muted', 'Lade Räume …'); return; }
     if (info.error) { div(s, 'callout', info.error); return; }
-    div(s, 'small muted', `Aus den Wänden: Öffnungen bis ${G.fmt(info.door_m, 1)} m gelten als Tür. Namen kommen aus den Bereichen `
-      + 'der Geräte in Home Assistant, ein eigener Name hat Vorrang. Die Suche nennt die wahrscheinlichsten Räume.');
+
+    const hintBox = div(s, 'callout room-split-hint');
+    div(hintBox, 'small', 'Zusammenhängende Räume trennen? Im Werkzeug „Wand zeichnen“ einfach eine Wand dazwischen einzeichnen '
+      + `(Öffnungen bis ${G.fmt(info.door_m, 1)} m gelten als Tür).`);
+    button(hintBox, 'Wand zeichnen (W)', () => this.setTool('draw'));
+
+    if (!info.rooms.length) {
+      div(s, 'small muted', 'Noch keine geschlossenen Räume erkannt. Zeichne Außen- und Innenwände oder starte die Erkennung.');
+      return;
+    }
+
+    const colors = this.roomColors();
     const list = div(s, 'list');
-    for (const r of info.rooms) {
+    const selectRow = (id) => {
+      if (this.selRoom === id) return;
+      this.selRoom = id;
+      this.renderRooms();
+      for (const n of list.querySelectorAll('.room-row')) {
+        n.classList.toggle('selected', Number(n.dataset.room) === id);
+      }
+    };
+    const srcMeta = {
+      user: ['eigener Name', 'ok'],
+      ha: ['aus Home Assistant', 'ha'],
+      auto: ['automatisch', ''],
+    };
+
+    for (let i = 0; i < info.rooms.length; i += 1) {
+      const r = info.rooms[i];
+      const ci = colors[i] ?? (i % 6);
+      const [srcLabel, srcCls] = srcMeta[r.source] || ['automatisch', ''];
       const row = div(list, `room-row${this.selRoom === r.id ? ' selected' : ''}`);
       row.dataset.room = r.id;
+
+      const head = div(row, 'room-row-head');
+      div(head, `room-swatch room-color-${ci}`);
+      div(head, 'room-row-title', r.name);
+      div(head, 'room-area-badge', `${G.fmt(r.area_m2, 1)} m²`);
+      div(head, `badge${srcCls ? ` ${srcCls}` : ''}`, srcLabel);
+
+      const wrap = div(row, 'room-row-input-wrap');
       const inp = document.createElement('input');
       inp.type = 'text';
       inp.maxLength = 40;
       inp.value = r.source === 'user' ? r.name : '';
-      inp.placeholder = r.name;
+      inp.placeholder = r.source === 'user' ? '' : `Eigenen Namen vergeben (${r.name})`;
       inp.setAttribute('aria-label', `Name für ${r.name}`);
-      inp.addEventListener('focus', () => { if (this.selRoom !== r.id) { this.selRoom = r.id; this.renderRooms(); } });
+      inp.addEventListener('focus', () => selectRow(r.id));
       inp.addEventListener('change', () => this.saveRoomName(r, inp.value));
-      row.appendChild(inp);
-      const src = r.source === 'user' ? 'eigener Name' : r.source === 'ha' ? 'aus Home Assistant' : 'automatisch';
-      div(row, 'small muted', `${G.fmt(r.area_m2, 1)} m² · ${src}`);
+      wrap.appendChild(inp);
+
+      if (r.source === 'user') {
+        const rst = button(wrap, '↺', () => this.saveRoomName(r, ''));
+        rst.classList.add('room-reset-btn');
+        rst.title = 'Eigenen Namen zurücksetzen';
+        rst.setAttribute('aria-label', `Eigenen Namen für ${r.name} zurücksetzen`);
+      }
+
+      row.addEventListener('click', (ev) => {
+        selectRow(r.id);
+        if (ev.target !== inp && !ev.target.closest('button') && window.matchMedia?.('(pointer: fine)').matches) inp.focus();
+      });
     }
+    div(s, 'small muted', 'Namen kommen vorrangig von dir, sonst aus den Home-Assistant-Bereichen der Geräte.');
   }
 
   // --- Hausfläche ---------------------------------------------------------------------------

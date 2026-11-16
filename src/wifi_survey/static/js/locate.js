@@ -56,15 +56,29 @@ export class LocateView {
     this.scene.id = 'scene3d';
     ctx.svg.parentElement.appendChild(this.scene);
     this.bind3d();
-    // Antippen in 2D (Fundort): Finger kaum bewegt; Verschieben und Zoomen übernimmt der Viewport
+    // Antippen in 2D (Fundort oder Raumauswahl): Finger kaum bewegt; Verschieben und Zoomen übernimmt der Viewport
     this.onPointerDown = (e) => { this.tap = e.isPrimary ? { x: e.clientX, y: e.clientY, multi: false } : { ...this.tap, multi: true }; };
     this.onPointerUp = (e) => {
       const t = this.tap;
       this.tap = null;
-      if (!this.marking || !t || t.multi || !e.isPrimary || Math.hypot(e.clientX - t.x, e.clientY - t.y) > TAP_PX) return;
-      this.foundPos = this.vp.toWorld(e.clientX, e.clientY).map((v) => Math.round(v * 10) / 10);
-      this.renderOverlay();
-      this.renderPanel();
+      if (!t || t.multi || !e.isPrimary || Math.hypot(e.clientX - t.x, e.clientY - t.y) > TAP_PX) return;
+      const w = this.vp.toWorld(e.clientX, e.clientY);
+      if (this.marking) {
+        this.foundPos = w.map((v) => Math.round(v * 10) / 10);
+        this.renderOverlay();
+        this.renderPanel();
+        return;
+      }
+      if (this.mode === '2d') {
+        const fr = this.floorResult(this.floor?.id);
+        const hit = (fr?.rooms || []).find((rm) => rm.contours.some((pg) => G.inPolygon(w, pg)));
+        if (hit) {
+          this.room = `${this.floor.id}:${hit.id}`;
+          this.render2d();
+          this.renderPanel();
+          document.querySelector(`#panel ol.room-rank li[data-room='${this.room}']`)?.scrollIntoView({ block: 'nearest' });
+        }
+      }
     };
     ctx.svg.addEventListener('pointerdown', this.onPointerDown);
     ctx.svg.addEventListener('pointerup', this.onPointerUp);
@@ -172,10 +186,15 @@ export class LocateView {
     const p = this.ctx.panel;
     const scroll = p.scrollTop;
     p.replaceChildren();
-    const s = section(p, 'Gerät suchen');
     if (!this.floors.length) {
+      const s = section(p, 'Gerät suchen');
       div(s, 'muted', 'Zum Suchen braucht mindestens ein Stockwerk einen Maßstab, Wände und platzierte Zugangspunkte.');
       return;
+    }
+    if (this.result) this.renderResult(p);     // Ergebnis zuerst: auf dem Handy sofort ohne Scrollen sichtbar
+    const s = section(p, 'Gerät suchen');
+    if (this.busy === 'locate' && this.device && !this.result) {
+      div(s, 'muted', `Suche „${this.device.label}“ …`);
     }
     div(s, 'small muted', 'Die FRITZ!Box weiß, an welchem Zugangspunkt ein Gerät hängt und wie stark er es empfängt. '
       + 'Daraus schätzt die App, in welchen Räumen es am ehesten liegt. Genauer wird es mit „findbar“: '
@@ -189,7 +208,6 @@ export class LocateView {
       div(s, 'small muted', src);
       if (this.list.error) div(s, 'small callout', `FRITZ!Box nicht erreichbar: ${this.list.error}`);
     }
-    if (this.result) this.renderResult(p);     // Ergebnis vor der Liste: auf dem Handy sofort sichtbar
     this.renderList(p);
     this.renderFound(p);
     p.scrollTop = this.toTop ? 0 : scroll;
@@ -231,58 +249,34 @@ export class LocateView {
     const r = this.result;
     const s = section(p, `Wo ist „${this.device.label}“?`);
     if (this.busy === 'locate') div(s, 'muted', 'Rechne …');
-    const at = r.source === 'live' ? `abgefragt ${when(r.reading.measured_at)}` : `aus dem Messlauf vom ${when(r.reading.measured_at)}`;
-    div(s, 'small', `${r.reading.rssi} dBm an ${this.device.ap_label} (${bandLabel(r.reading.band)} GHz, ${at}). `
-      + `Wahrscheinlicher Bereich (${Math.round(r.region_mass * 100)} %): etwa ${G.fmt(r.area_m2, 0)} m².`);
-    if (r.source === 'beispiel') {
-      div(s, 'small muted', 'Beispielhaus: Die Werte stammen aus dem erzeugten Messlauf, die Geräte liegen dort, wo das Beispiel sie hinlegt.');
-    } else if (r.source !== 'live') {
-      div(s, 'small callout', 'Kein aktueller Wert der FRITZ!Box: Ein Fundort passt nur dazu, wenn das Gerät seit dem Messlauf dort lag.');
-    } else if (r.previous?.unchanged) {
-      div(s, 'small callout', `Gleicher Wert wie beim letzten Fundort (${when(r.previous.t)}, ${r.previous.floor}). `
-        + 'Ruhende Geräte erneuert die FRITZ!Box nur alle paar Minuten. Wurde das Gerät umgelegt: ein paar Minuten warten und neu suchen.');
-    }
-    this.renderBasis(s, r);
-    const tbl = document.createElement('table');
-    tbl.className = 'mini share-table';
-    for (const f of r.floors) {
-      const tr = tbl.insertRow();
-      tr.className = `link${f.id === this.floor?.id && this.mode === '2d' ? ' current' : ''}`;
-      tr.insertCell().textContent = f.name;
-      const bar = tr.insertCell();
-      bar.className = 'share-cell';
-      const track = div(bar, 'share-track');
-      const fill = div(track, 'share-bar');
-      fill.style.width = `${Math.min(100, Math.max(f.share, f.share > 0 ? 2 : 0))}%`;
-      const td = tr.insertCell();
-      td.className = 'num';
-      td.textContent = `${f.share} %`;
-      tr.addEventListener('click', () => this.setFloor(this.floors.find((x) => x.id === f.id), true));
-    }
-    s.appendChild(tbl);
     if (r.rooms?.length) {
-      div(s, 'small', 'Wo zuerst nachsehen:');
+      div(s, 'room-rank-head', 'Wo zuerst nachsehen:');
       const ol = document.createElement('ol');
       ol.className = 'room-rank';
-      for (const rm of r.rooms.slice(0, 5)) {
+      r.rooms.slice(0, 5).forEach((rm, idx) => {
         const li = document.createElement('li');
-        li.className = this.room === rm.key ? 'current' : '';
+        const cls = [];
+        if (idx === 0) cls.push('top');
+        if (this.room === rm.key) cls.push('current');
+        li.className = cls.join(' ');
         li.dataset.room = rm.key;
-        li.textContent = `${rm.name} (${rm.floor}) – ${rm.share} %`;
+        div(li, 'room-rank-num', String(idx + 1));
+        const info = div(li, 'room-rank-info');
+        div(info, 'room-rank-name', rm.name);
+        div(info, 'room-rank-floor', rm.floor);
+        const bar = div(li, 'room-rank-bar');
+        const track = div(bar, 'share-track');
+        const fill = div(track, 'share-bar');
+        fill.style.width = `${Math.min(100, Math.max(rm.share, rm.share > 0 ? 2 : 0))}%`;
+        div(li, 'room-rank-pct num', `${rm.share} %`);
         li.addEventListener('click', () => {
           this.room = rm.key;
           this.setFloor(this.floors.find((x) => x.id === rm.floor_id), true);
         });
         ol.appendChild(li);
-      }
+      });
       s.appendChild(ol);
     }
-    if (r.skipped.length) div(s, 'small muted', `Nicht berücksichtigt: ${r.skipped.join(', ')} (nicht ausgerichtet oder ohne Auswertung).`);
-    const band5 = r.reading.band === '5' || r.reading.band === '6';
-    div(s, 'small muted', r.basis === 'scan'
-      ? `Unsicherheit etwa ±${G.fmt(r.sigma_db, 0)} dB je Wert; gemeinsam schwächere Werte (Handy zugedeckt) verschieben die Schätzung kaum.`
-      : `Unsicherheit etwa ±${G.fmt(r.sigma_db, 0)} dB${band5 ? ' (5 GHz kennt das Modell nur als Abschlag)' : ''}, `
-        + 'deshalb ein Bereich statt eines Punkts. Jeder gemeldete Fundort macht die Schätzung genauer.');
     const views = div(s, 'row');
     const b3 = button(views, '3D-Ansicht', () => { this.mode = '3d'; this.marking = false; this.show(); this.renderPanel(); });
     const b2 = button(views, 'Stockwerk', () => { this.mode = '2d'; this.show(); this.renderPanel(); });
@@ -301,13 +295,48 @@ export class LocateView {
       });
       f.classList.add('primary');
     } else {
-      div(s, 'callout', `Tippe auf die Stelle, an der „${this.device.label}“ lag. Das Stockwerk wählst du in der Tabelle oben.`);
+      div(s, 'callout', `Tippe auf die Stelle, an der „${this.device.label}“ lag. Das Stockwerk wählst du in der Tabelle darunter.`);
       const row = div(s, 'row');
       const ok = button(row, 'Fundort speichern', () => this.saveFound());
       ok.classList.add('primary');
       ok.disabled = !this.foundPos;
       button(row, 'Abbrechen', () => { this.marking = false; this.foundPos = null; this.updateHint(); this.renderOverlay(); this.renderPanel(); });
     }
+    const tbl = document.createElement('table');
+    tbl.className = 'mini share-table';
+    for (const f of r.floors) {
+      const tr = tbl.insertRow();
+      tr.className = `link${f.id === this.floor?.id && this.mode === '2d' ? ' current' : ''}`;
+      tr.insertCell().textContent = f.name;
+      const bar = tr.insertCell();
+      bar.className = 'share-cell';
+      const track = div(bar, 'share-track');
+      const fill = div(track, 'share-bar');
+      fill.style.width = `${Math.min(100, Math.max(f.share, f.share > 0 ? 2 : 0))}%`;
+      const td = tr.insertCell();
+      td.className = 'num';
+      td.textContent = `${f.share} %`;
+      tr.addEventListener('click', () => this.setFloor(this.floors.find((x) => x.id === f.id), true));
+    }
+    s.appendChild(tbl);
+    const at = r.source === 'live' ? `abgefragt ${when(r.reading.measured_at)}` : `aus dem Messlauf vom ${when(r.reading.measured_at)}`;
+    div(s, 'small', `${r.reading.rssi} dBm an ${this.device.ap_label} (${bandLabel(r.reading.band)} GHz, ${at}). `
+      + `Wahrscheinlicher Bereich (${Math.round(r.region_mass * 100)} %): etwa ${G.fmt(r.area_m2, 0)} m².`);
+    if (r.source === 'beispiel') {
+      div(s, 'small muted', 'Beispielhaus: Die Werte stammen aus dem erzeugten Messlauf, die Geräte liegen dort, wo das Beispiel sie hinlegt.');
+    } else if (r.source !== 'live') {
+      div(s, 'small callout', 'Kein aktueller Wert der FRITZ!Box: Ein Fundort passt nur dazu, wenn das Gerät seit dem Messlauf dort lag.');
+    } else if (r.previous?.unchanged) {
+      div(s, 'small callout', `Gleicher Wert wie beim letzten Fundort (${when(r.previous.t)}, ${r.previous.floor}). `
+        + 'Ruhende Geräte erneuert die FRITZ!Box nur alle paar Minuten. Wurde das Gerät umgelegt: ein paar Minuten warten und neu suchen.');
+    }
+    this.renderBasis(s, r);
+    if (r.skipped.length) div(s, 'small muted', `Nicht berücksichtigt: ${r.skipped.join(', ')} (nicht ausgerichtet oder ohne Auswertung).`);
+    const band5 = r.reading.band === '5' || r.reading.band === '6';
+    div(s, 'small muted', r.basis === 'scan'
+      ? `Unsicherheit etwa ±${G.fmt(r.sigma_db, 0)} dB je Wert; gemeinsam schwächere Werte (Handy zugedeckt) verschieben die Schätzung kaum.`
+      : `Unsicherheit etwa ±${G.fmt(r.sigma_db, 0)} dB${band5 ? ' (5 GHz kennt das Modell nur als Abschlag)' : ''}, `
+        + 'deshalb ein Bereich statt eines Punkts. Jeder gemeldete Fundort macht die Schätzung genauer.');
   }
 
   // Womit gerechnet wurde: eigener Scan des Handys („findbar“) oder der eine Wert der FRITZ!Box
@@ -340,20 +369,56 @@ export class LocateView {
     if (!all.length) return;
     const s = section(p, 'Fundorte');
     const inRegion = all.filter(({ fp }) => fp.in_region).length;
-    const ranked = all.filter(({ fp }) => fp.room_rank);
+    const ranked = all.filter(({ fp }) => fp.room_rank != null);
+    const top1 = ranked.filter(({ fp }) => fp.room_rank === 1).length;
     const top2 = ranked.filter(({ fp }) => fp.room_rank <= 2).length;
-    div(s, 'small muted', `${all.length} gemeldet, davon ${inRegion} im wahrscheinlichen Bereich`
-      + `${ranked.length ? `, ${top2} von ${ranked.length} im ersten oder zweiten genannten Raum` : ''}. Sie eichen das Modell mit.`);
+    const summary = div(s, 'found-summary');
+    if (ranked.length) {
+      const main = div(summary, 'found-summary-main');
+      main.append('Raum-Trefferquote: ');
+      const b1 = document.createElement('strong');
+      b1.textContent = `${top1} von ${ranked.length}`;
+      main.append(b1, ' direkt im 1. Raum');
+      if (ranked.length > 1 || top2 > top1) {
+        const b2 = document.createElement('strong');
+        b2.textContent = `${top2} von ${ranked.length} (${Math.round((top2 / ranked.length) * 100)} %)`;
+        main.append(' · ', b2, ' in den ersten 2 Räumen');
+      }
+      div(summary, 'small muted', `${inRegion} von ${all.length} im 50-%-Bereich · Jeder gemeldete Fundort eicht das Modell mit.`);
+    } else {
+      const main = div(summary, 'found-summary-main');
+      const b = document.createElement('strong');
+      b.textContent = `${inRegion} von ${all.length}`;
+      main.append(b, ' im 50-%-Bereich');
+      div(summary, 'small muted', 'Jeder gemeldete Fundort eicht das Modell mit.');
+    }
     const tbl = document.createElement('table');
-    tbl.className = 'mini tight';
+    tbl.className = 'mini tight found-table';
     const head = tbl.createTHead().insertRow();
     for (const h of ['Gerät', 'Stockwerk', 'Treffer', '']) head.insertCell().textContent = h;
+    const tbody = tbl.createTBody();
     for (const { f, fp } of all.sort((a, b) => b.fp.t.localeCompare(a.fp.t))) {
-      const tr = tbl.insertRow();
-      tr.insertCell().textContent = `${fp.label || fp.device} · ${when(fp.t)}`;
+      const tr = tbody.insertRow();
+      const devCell = tr.insertCell();
+      div(devCell, 'found-dev', fp.label || fp.device);
+      const tStr = when(fp.t);
+      if (tStr) div(devCell, 'found-time muted', tStr);
       tr.insertCell().textContent = f.name;
-      tr.insertCell().textContent = `${fp.room_rank ? `Raum ${fp.room_rank}. Wahl, ` : ''}${fp.in_region ? 'im Bereich' : 'daneben'}`
-        + `${fp.error_m != null ? `, ${G.fmt(fp.error_m, 1)} m` : ''}`;
+      const hitCell = tr.insertCell();
+      const hit = div(hitCell, 'found-hit');
+      if (fp.room_rank != null) {
+        const cls = fp.room_rank === 1 ? 'ok' : fp.room_rank === 2 ? 'ha' : 'warn';
+        div(hit, `badge ${cls}`, `${fp.room_rank}. Raum`);
+      }
+      const detail = div(hit, 'found-hit-detail');
+      detail.textContent = fp.in_region ? '50-%-Bereich' : 'außerhalb';
+      if (fp.error_m != null) {
+        detail.append(' · ');
+        const dist = document.createElement('span');
+        dist.className = 'nowrap';
+        dist.textContent = `${G.fmt(fp.error_m, 1)} m`;
+        detail.appendChild(dist);
+      }
       const del = document.createElement('button');
       del.textContent = '✕';
       del.title = 'Fundort löschen';
@@ -380,7 +445,7 @@ export class LocateView {
       ? 'Haus in 3D: Ziehen dreht die Ansicht, ein Klick auf ein Stockwerk öffnet es. Violett: wo das Gerät wahrscheinlich ist.'
       : this.marking ? 'Fundort antippen. Mausrad oder zwei Finger zoomen, Ziehen verschiebt.'
         : 'Violett: wo das Gerät wahrscheinlich ist (Linie: Bereich mit 50 % Wahrscheinlichkeit, Kreuz: wahrscheinlichste Stelle). '
-          + 'Gestrichelt: Räume mit ihrer Wahrscheinlichkeit.');
+          + 'Gestrichelt: Räume mit ihrer Wahrscheinlichkeit (Klick wählt einen Raum).');
   }
 
   setFloor(floor, show2d) {
@@ -438,11 +503,14 @@ export class LocateView {
       for (const poly of fr.contours) {
         el('polygon', { points: poly.map((q) => q.join(',')).join(' '), fill: 'none', stroke: VIOLET, 'stroke-width': 2.5, 'vector-effect': 'non-scaling-stroke' }, heat);
       }
-      // Räume: Umriss, der gewählte hervorgehoben; Name und Wahrscheinlichkeit in der Mitte
-      for (const rm of fr.rooms || []) {
+      // Räume: Umriss, der gewählte zuletzt obenauf hervorgehoben
+      const ordered = [...(fr.rooms || [])].sort(
+        (a, b) => (`${this.floor.id}:${a.id}` === this.room ? 1 : 0) - (`${this.floor.id}:${b.id}` === this.room ? 1 : 0),
+      );
+      for (const rm of ordered) {
         const key = `${this.floor.id}:${rm.id}`;
         for (const pg of rm.contours) {
-          el('polygon', { points: G.pointsAttr(pg), class: `room-outline${this.room === key ? ' current' : ''}` }, rooms);
+          el('polygon', { points: G.pointsAttr(pg), class: `room-outline${this.room === key ? ' current' : ''}`, 'data-room': key }, rooms);
         }
       }
     }
@@ -455,34 +523,83 @@ export class LocateView {
     const { marks } = this.layer;
     marks.replaceChildren();
     const px = (n) => this.vp.px(n);
+    const boxes = [];
+    const fr = this.floorResult(this.floor.id);
+    const aps = this.floor.devices.filter((x) => x.kind === 'ap');
     const apKey = this.result?.reading.ap;
-    for (const d of this.floor.devices.filter((x) => x.kind === 'ap')) {
-      const g = el('g', { transform: `translate(${d.pos[0]} ${d.pos[1]})` }, marks);
+
+    // Punkt-Symbole zuerst zeichnen und als Sperrflächen merken, damit keine Beschriftung sie überdeckt
+    for (const d of aps) {
       const own = d.key === apKey;
+      const g = el('g', { transform: `translate(${d.pos[0]} ${d.pos[1]})` }, marks);
       el('circle', { r: px(own ? 12 : 9), fill: own ? 'var(--dev-ap)' : 'var(--handle-fill)', stroke: 'var(--dev-ap)', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' }, g);
       el('circle', { r: px(4), fill: own ? 'var(--handle-fill)' : 'var(--dev-ap)' }, g);
-      const t = el('text', { x: px(14), y: px(4), class: 'device-label', 'font-size': px(13) }, g);
-      t.textContent = own ? `${d.label} (verbunden)` : d.label;
-    }
-    const fr = this.floorResult(this.floor.id);
-    for (const rm of fr?.rooms || []) {
-      if (rm.share < 1 && `${this.floor.id}:${rm.id}` !== this.room) continue;
-      const t = el('text', { x: rm.anchor[0], y: rm.anchor[1], class: 'room-label', 'font-size': px(13) }, marks);
-      t.textContent = `${rm.name} ${rm.share} %`;
+      const r = px(own ? 14 : 11);
+      boxes.push({ x0: d.pos[0] - r, y0: d.pos[1] - r, x1: d.pos[0] + r, y1: d.pos[1] + r });
     }
     if (fr?.peak && this.result.best.floor_id === this.floor.id) {
       const g = el('g', { transform: `translate(${fr.peak[0]} ${fr.peak[1]})` }, marks);
       el('circle', { r: px(10), fill: 'none', stroke: VIOLET, 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' }, g);
       el('path', { d: `M${-px(16)},0H${px(16)}M0,${-px(16)}V${px(16)}`, stroke: VIOLET, 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' }, g);
+      const r = px(16);
+      boxes.push({ x0: fr.peak[0] - r, y0: fr.peak[1] - r, x1: fr.peak[0] + r, y1: fr.peak[1] + r });
     }
     for (const fp of this.floor.found || []) {
       const g = el('g', { transform: `translate(${fp.pos[0]} ${fp.pos[1]})` }, marks);
       el('rect', { x: -px(7), y: -px(7), width: px(14), height: px(14), rx: px(3), fill: FOUND, stroke: 'var(--handle-fill)', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' }, g);
-      if (this.vp.s >= 0.5) {
-        const t = el('text', { x: px(11), y: px(4), class: 'device-label', 'font-size': px(11) }, g);
+      const r = px(10);
+      boxes.push({ x0: fp.pos[0] - r, y0: fp.pos[1] - r, x1: fp.pos[0] + r, y1: fp.pos[1] + r });
+    }
+
+    // Beschriftungen der Zugangspunkte und Fundorte überlappungsfrei platzieren
+    for (const d of aps) {
+      const own = d.key === apKey;
+      const t = el('text', { x: d.pos[0] + px(14), y: d.pos[1] + px(4), class: 'device-label', 'font-size': px(13) }, marks);
+      t.textContent = own ? `${d.label} (verbunden)` : d.label;
+      const tw = t.getComputedTextLength?.() || t.textContent.length * px(7.4);
+      const ty = placeSideLabel(boxes, d.pos[0] + px(14), d.pos[1] + px(4), tw, px(15), px);
+      t.setAttribute('y', ty);
+    }
+    if (this.vp.s >= 0.5) {
+      for (const fp of this.floor.found || []) {
+        const t = el('text', { x: fp.pos[0] + px(11), y: fp.pos[1] + px(4), class: 'device-label', 'font-size': px(11) }, marks);
         t.textContent = `✓ ${fp.label || ''}`;
+        const tw = t.getComputedTextLength?.() || t.textContent.length * px(6.5);
+        const ty = placeSideLabel(boxes, fp.pos[0] + px(11), fp.pos[1] + px(4), tw, px(13), px);
+        t.setAttribute('y', ty);
       }
     }
+
+    // Raumnamen mit Prozenten: gewählten Raum und höchste Werte zuerst platzieren, gewählten obenauf zeichnen
+    const roomsShown = (fr?.rooms || [])
+      .filter((rm) => rm.share >= 1 || `${this.floor.id}:${rm.id}` === this.room)
+      .sort((a, b) => {
+        const ca = `${this.floor.id}:${a.id}` === this.room ? 1 : 0;
+        const cb = `${this.floor.id}:${b.id}` === this.room ? 1 : 0;
+        return cb - ca || b.share - a.share;
+      });
+    let currentLabel = null;
+    for (const rm of roomsShown) {
+      const key = `${this.floor.id}:${rm.id}`;
+      const isCurrent = key === this.room;
+      const g = el('g', { class: `room-label-group${isCurrent ? ' current' : ''}` }, marks);
+      const pill = el('rect', { class: 'room-label-pill', rx: px(5), ry: px(5) }, g);
+      const t = el('text', { x: 0, y: 0, class: 'room-label', 'font-size': px(12.5) }, g);
+      t.textContent = `${rm.name} · ${rm.share} %`;
+      const tw = t.getComputedTextLength?.() || t.textContent.length * px(7.4);
+      const w = tw + px(14);
+      const h = px(20);
+      const [cx, cy] = G.placeRoomLabel(boxes, rm, w, h, px);
+      pill.setAttribute('x', cx - w / 2);
+      pill.setAttribute('y', cy - h / 2);
+      pill.setAttribute('width', w);
+      pill.setAttribute('height', h);
+      t.setAttribute('x', cx);
+      t.setAttribute('y', cy);
+      if (isCurrent) currentLabel = g;
+    }
+    if (currentLabel) marks.appendChild(currentLabel);
+
     if (this.foundPos) {
       const g = el('g', { transform: `translate(${this.foundPos[0]} ${this.foundPos[1]})`, class: 'found-new' }, marks);
       el('circle', { r: px(13), fill: 'var(--locate-found-fill)', stroke: FOUND, 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' }, g);
@@ -616,4 +733,22 @@ export class LocateView {
       stack.appendChild(plate);
     }
   }
+}
+
+// --- Hilfen für überlappungsfreie Beschriftungen im 2D-Plan -------------------------------
+
+function placeSideLabel(boxes, x, baseY, w, h, px) {
+  let best = { ty: baseY, box: { x0: x - px(2), y0: baseY - h + px(3), x1: x + w + px(2), y1: baseY + px(3) }, area: Infinity };
+  for (const k of [0, 1, -1, 2, -2, 3, -3, 4, -4]) {
+    const ty = baseY + k * px(16);
+    const box = { x0: x - px(2), y0: ty - h + px(3), x1: x + w + px(2), y1: ty + px(3) };
+    const area = boxes.reduce((s, o) => s + G.overlapArea(box, o), 0);
+    if (area === 0) {
+      boxes.push(box);
+      return ty;
+    }
+    if (area < best.area) best = { ty, box, area };
+  }
+  boxes.push(best.box);
+  return best.ty;
 }

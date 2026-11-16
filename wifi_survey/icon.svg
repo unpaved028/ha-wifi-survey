@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Schild im Stil der Oberfläche, klar auf hellem und dunklem Hintergrund -->
+  <rect x="3" y="3" width="122" height="122" rx="24" fill="#1f3a5f" stroke="#5c83b5" stroke-width="4"/>
+  <!-- Hervorgehobener Raum -->
+  <rect x="25" y="25" width="35" height="44" fill="#18bcf2" fill-opacity="0.34"/>
+  <!-- Grundriss: Außen- und Innenwände mit Türöffnungen -->
+  <rect x="25" y="25" width="78" height="78" rx="6" fill="none" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M 60 25 V 43 M 60 88 V 103 M 25 69 H 41" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="square"/>
+  <!-- Zugangspunkt und Funkwellen durch den offenen Bereich -->
+  <path d="M 55 83 A 29 29 0 0 1 84 54" fill="none" stroke="#38bdf8" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 67 83 A 17 17 0 0 1 84 66" fill="none" stroke="#ffd479" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="84" cy="83" r="7.5" fill="#ffd479"/>
+</svg>

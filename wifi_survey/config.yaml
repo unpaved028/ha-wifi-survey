@@ -1,6 +1,6 @@
 # WiFi Survey – Home Assistant app (https://contributors.home-assistant.io/apps/reference/configuration/)
 name: WiFi Survey
-version: "1.5.0"
+version: "1.6.0"
 slug: wifi_survey
 description: Upload floor plans, detect walls automatically and place your devices – WiFi coverage maps, simulation, recommendations and a device finder
 url: https://github.com/unpaved028/ha-wifi-survey

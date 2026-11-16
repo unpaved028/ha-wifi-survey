@@ -1,5 +1,11 @@
 # Änderungen
 
+## 1.6.0
+- Find a device: the list of rooms comes first, with a bar per room; the most likely room stands out, a click on a room in the plan selects it / Gerät suchen: Die Raumliste steht oben, mit Balken je Raum; der wahrscheinlichste Raum hebt sich ab, ein Klick auf einen Raum im Plan wählt ihn
+- Rooms tool: neighbouring rooms in different colours, names placed off the walls, origin of each name (own, Home Assistant, automatic), hint on how to split rooms / Werkzeug „Räume“: Nachbarräume in verschiedenen Farben, Namen nicht auf Wänden, Herkunft jedes Namens, Hinweis zum Trennen von Räumen
+- Found locations: clearer hit column and room hit rate / Fundorte: verständliche Spalte „Treffer“ und Trefferquote der Räume
+- New icon and logo / Neues Symbol und Logo
+
 ## 1.5.0
 - New name: **WiFi Survey** (before: WLAN-Ausleuchtung). Documentation in English and German. / Neuer Name: **WiFi Survey** (vorher WLAN-Ausleuchtung), Doku auf Englisch und Deutsch
 - Preparation for publishing in Home Assistant (public app repository with prebuilt images) / Vorbereitung der Veröffentlichung (öffentliches App-Repository mit vorgebauten Abbildern)
