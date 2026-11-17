@@ -4,6 +4,22 @@
 import { api } from './api.js';
 import { section, div, button } from './plans.js';
 
+const TEXTS = {
+  title: 'In wenigen Schritten zur WLAN-Karte',
+  leadEmpty: 'Starte mit deinem eigenen Grundriss oder probiere zuerst das Beispielhaus aus.',
+  leadProject: 'Grundriss hochladen, Wände korrigieren, Zugangspunkte setzen. Messungen machen die Karte genauer.',
+  ownTitle: 'Eigenes Haus',
+  ownBody: 'Grundriss (PDF oder Bild) hochladen und Wände automatisch erkennen lassen.',
+  ownBtn: 'Plan hochladen',
+  demoTitle: 'Beispielhaus',
+  demoBody: 'Fertiges Haus mit zwei Stockwerken, Auswertung und Suche – ohne eigenen Plan.',
+  demoBtn: 'Beispielhaus laden',
+  demoActive: 'Beispielhaus aktiv: zwei Stockwerke, Router, Repeater und Messwerte zum Ausprobieren.',
+  demoEnd: 'Beispiel beenden und eigenes Haus anlegen',
+  demoConfirm: 'Beispiel beenden? Das Projekt ist danach leer.',
+  stepsEmptyHead: 'So entsteht deine Karte',
+};
+
 export class StartView {
   constructor(ctx) {
     this.ctx = ctx;
@@ -32,13 +48,15 @@ export class StartView {
 
   render() {
     const p = this.page;
+    const pr = this.ctx.project;
+    const empty = Boolean(pr && !pr.plans.length && !pr.floors.length);
     p.replaceChildren();
     const h = document.createElement('h1');
-    h.textContent = 'In wenigen Schritten zur WLAN-Karte';
+    h.textContent = TEXTS.title;
     p.appendChild(h);
-    div(p, 'muted', 'Grundriss hochladen, Wände automatisch erkennen lassen und korrigieren, Router und Repeater setzen. '
-      + 'Messungen machen die Karte genauer, sind aber kein Muss.');
-    this.renderDemo(p);
+    div(p, 'muted', empty ? TEXTS.leadEmpty : TEXTS.leadProject);
+    this.renderDemo(p, empty);
+    if (empty) div(p, 'start-steps-head', TEXTS.stepsEmptyHead);
     const list = document.createElement('ol');
     list.className = 'steps';
     p.appendChild(list);
@@ -60,16 +78,15 @@ export class StartView {
     }
   }
 
-  // Beispielhaus (Paket A17): in ein leeres Projekt laden oder beenden
-  renderDemo(p) {
+  // Beispielhaus (Paket A17) und klarer Zweifach-Einstieg (Paket A22 M2)
+  renderDemo(p, empty) {
     const { ctx } = this;
     const pr = ctx.project;
     if (pr?.demo) {
       const box = div(p, 'callout demo-box');
-      div(box, '', 'Das ist das Beispielhaus zum Ausprobieren: zwei Stockwerke, Router und Repeater, Messpunkte und Geräte zum '
-        + 'Suchen, alle erzeugt. Messen und Messläufe sind hier aus.');
-      button(box, 'Beispiel beenden und eigenes Haus anlegen', async () => {
-        if (!confirm('Beispiel beenden? Das Projekt ist danach leer.')) return;
+      div(box, '', TEXTS.demoActive);
+      button(box, TEXTS.demoEnd, async () => {
+        if (!confirm(TEXTS.demoConfirm)) return;
         try {
           await api.demoEnd();
           await ctx.refreshProject();
@@ -78,11 +95,17 @@ export class StartView {
           ctx.toast(e.message, 'error');
         }
       });
-    } else if (pr && !pr.plans.length && !pr.floors.length) {
-      const box = div(p, 'callout demo-box');
-      div(box, '', 'Erst einmal ausprobieren? Das Beispielhaus zeigt alle Ansichten mit einem erzeugten Haus, ohne eigenen Plan '
-        + 'und ohne FRITZ!Box.');
-      const b = button(box, 'Beispielhaus laden', async () => {
+    } else if (empty) {
+      const grid = div(p, 'start-choices');
+      const own = div(grid, 'start-choice main');
+      div(own, 'start-choice-title', TEXTS.ownTitle);
+      div(own, 'start-choice-body', TEXTS.ownBody);
+      button(own, TEXTS.ownBtn, () => ctx.navigate('#/plaene')).classList.add('primary');
+
+      const demo = div(grid, 'start-choice demo-box');
+      div(demo, 'start-choice-title', TEXTS.demoTitle);
+      div(demo, 'start-choice-body', TEXTS.demoBody);
+      const b = button(demo, TEXTS.demoBtn, async () => {
         b.disabled = true;
         try {
           await api.demoLoad();
@@ -93,7 +116,6 @@ export class StartView {
           ctx.toast(e.message, 'error');
         }
       });
-      b.classList.add('primary');
     }
   }
 

@@ -196,9 +196,6 @@ export class LocateView {
     if (this.busy === 'locate' && this.device && !this.result) {
       div(s, 'muted', `Suche „${this.device.label}“ …`);
     }
-    div(s, 'small muted', 'Die FRITZ!Box weiß, an welchem Zugangspunkt ein Gerät hängt und wie stark er es empfängt. '
-      + 'Daraus schätzt die App, in welchen Räumen es am ehesten liegt. Genauer wird es mit „findbar“: '
-      + 'Ein Android-Handy mit der App meldet im Ruhen alle Zugangspunkte (Ansicht „Messen“).');
     const row = div(s, 'row');
     const refresh = button(row, this.busy === 'list' ? 'Frage FRITZ!Box …' : 'Liste aktualisieren', () => this.loadDevices(true));
     refresh.disabled = !!this.busy;
@@ -210,6 +207,9 @@ export class LocateView {
     }
     this.renderList(p);
     this.renderFound(p);
+    div(section(p, 'So funktioniert die Suche'), 'small muted', 'Die FRITZ!Box weiß, an welchem Zugangspunkt ein Gerät hängt und wie stark er es empfängt. '
+      + 'Daraus schätzt die App, in welchen Räumen es am ehesten liegt. Genauer wird es mit „findbar“: '
+      + 'Ein Android-Handy mit der App meldet im Ruhen alle Zugangspunkte (Ansicht „Messen“).');
     p.scrollTop = this.toTop ? 0 : scroll;
     this.toTop = false;
   }

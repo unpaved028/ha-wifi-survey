@@ -53,6 +53,54 @@ export class PlansView {
     const p = ctx.panel;
     p.replaceChildren();
 
+    if (this.plan) {
+      if (this.pending) this.renderPending(p);
+
+      const tools = section(p, 'Werkzeug');
+      const tb = div(tools, 'toolbar');
+      this.toolButton(tb, 'select', 'Auswählen', 'V');
+      this.toolButton(tb, 'crop', 'Ausschnitt', 'C');
+      const fitBtn = button(tb, 'Ganze Seite', () => this.vp.fit());
+      fitBtn.insertAdjacentHTML('beforeend', '<span class="key">F</span>');
+
+      if (this.plan.pages.length > 1) {
+        const pg = section(p, 'Seite');
+        const sel = document.createElement('select');
+        this.plan.pages.forEach((pg2, i) => {
+          const o = document.createElement('option');
+          o.value = i;
+          o.textContent = `Seite ${i + 1}`;
+          if (i === this.pageIndex) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change', () => {
+          this.pageIndex = Number(sel.value);
+          this.selectedFloor = null;
+          this.renderPanel();
+          this.renderStage(true);
+        });
+        pg.appendChild(sel);
+      }
+
+      const floors = section(p, 'Stockwerke auf dieser Seite');
+      const onPage = this.floorsOnPage();
+      if (!onPage.length) div(floors, 'muted small', 'Werkzeug „Ausschnitt“ wählen und ein Rechteck um ein Stockwerk ziehen.');
+      for (const f of onPage.sort((a, b) => a.level - b.level)) {
+        const card = div(floors, `card${this.selectedFloor === f.id ? ' selected' : ''}`);
+        div(card, 'title', f.name);
+        div(card, 'small muted', `Ebene ${f.level} · ${f.walls.length} Wände · ${f.scale ? 'Maßstab gesetzt' : 'ohne Maßstab'}`);
+        const row = div(card, 'row');
+        const open = button(row, 'Öffnen', () => ctx.navigate(`#/stockwerk/${f.id}`));
+        open.classList.add('primary');
+        button(row, this.selectedFloor === f.id ? 'Fertig' : 'Ausschnitt ändern', () => {
+          this.selectedFloor = this.selectedFloor === f.id ? null : f.id;
+          this.setMode('select');
+        });
+        const del = button(row, 'Löschen', () => this.deleteFloor(f));
+        del.classList.add('danger');
+      }
+    }
+
     const up = section(p, 'Plan hochladen');
     const zone = div(up, 'dropzone', 'PDF oder Bild hierher ziehen oder');
     const input = document.createElement('input');
@@ -95,73 +143,29 @@ export class PlansView {
       if (used > 0) del.title = 'Erst die Stockwerke dieses Plans löschen';
     }
 
-    if (!this.plan) return;
-
-    if (this.plan.pages.length > 1) {
-      const pg = section(p, 'Seite');
-      const sel = document.createElement('select');
-      this.plan.pages.forEach((pg2, i) => {
-        const o = document.createElement('option');
-        o.value = i;
-        o.textContent = `Seite ${i + 1}`;
-        if (i === this.pageIndex) o.selected = true;
-        sel.appendChild(o);
-      });
-      sel.addEventListener('change', () => {
-        this.pageIndex = Number(sel.value);
-        this.selectedFloor = null;
-        this.renderPanel();
-        this.renderStage(true);
-      });
-      pg.appendChild(sel);
-    }
-
-    const tools = section(p, 'Werkzeug');
-    const tb = div(tools, 'toolbar');
-    this.toolButton(tb, 'select', 'Auswählen', 'V');
-    this.toolButton(tb, 'crop', 'Ausschnitt', 'C');
-    const fitBtn = button(tb, 'Ganze Seite', () => this.vp.fit());
-    fitBtn.insertAdjacentHTML('beforeend', '<span class="key">F</span>');
-
-    if (this.pending) {
-      const form = section(p, 'Neues Stockwerk');
-      const used = new Set(ctx.project.floors.map((f) => f.name));
-      const suggestion = FLOOR_NAMES.find((n) => !used.has(n)) || '';
-      const name = field(form, 'Name', 'text', suggestion);
-      name.setAttribute('list', 'floor-names');
-      const dl = document.createElement('datalist');
-      dl.id = 'floor-names';
-      FLOOR_NAMES.forEach((n) => { const o = document.createElement('option'); o.value = n; dl.appendChild(o); });
-      form.appendChild(dl);
-      const level = field(form, 'Ebene (−1 Keller, 0 Erdgeschoss, 1 …)', 'number', LEVEL_GUESS[suggestion] ?? 0);
-      name.addEventListener('input', () => { if (name.value in LEVEL_GUESS) level.value = LEVEL_GUESS[name.value]; });
-      div(form, 'small muted', `Ausschnitt ${fmt(this.pending.w, 0)} × ${fmt(this.pending.h, 0)} (Seiteneinheiten)`);
-      const row = div(form, 'row');
-      const ok = button(row, 'Stockwerk anlegen', () => this.createFloor(name.value.trim(), Number(level.value)));
-      ok.classList.add('primary');
-      button(row, 'Abbrechen', () => { this.pending = null; this.renderPanel(); this.renderStage(); });
-      setTimeout(() => name.focus(), 0);
-    }
-
-    const floors = section(p, 'Stockwerke auf dieser Seite');
-    const onPage = this.floorsOnPage();
-    if (!onPage.length) div(floors, 'muted small', 'Werkzeug „Ausschnitt“ wählen und ein Rechteck um ein Stockwerk ziehen.');
-    for (const f of onPage.sort((a, b) => a.level - b.level)) {
-      const card = div(floors, `card${this.selectedFloor === f.id ? ' selected' : ''}`);
-      div(card, 'title', f.name);
-      div(card, 'small muted', `Ebene ${f.level} · ${f.walls.length} Wände · ${f.scale ? 'Maßstab gesetzt' : 'ohne Maßstab'}`);
-      const row = div(card, 'row');
-      const open = button(row, 'Öffnen', () => ctx.navigate(`#/stockwerk/${f.id}`));
-      open.classList.add('primary');
-      button(row, this.selectedFloor === f.id ? 'Fertig' : 'Ausschnitt ändern', () => {
-        this.selectedFloor = this.selectedFloor === f.id ? null : f.id;
-        this.setMode('select');
-      });
-      const del = button(row, 'Löschen', () => this.deleteFloor(f));
-      del.classList.add('danger');
-    }
-
     this.renderTransfer(p);
+    if (this.pending) p.scrollTop = 0;
+  }
+
+  renderPending(p) {
+    const { ctx } = this;
+    const form = section(p, 'Neues Stockwerk');
+    const used = new Set(ctx.project.floors.map((f) => f.name));
+    const suggestion = FLOOR_NAMES.find((n) => !used.has(n)) || '';
+    const name = field(form, 'Name', 'text', suggestion);
+    name.setAttribute('list', 'floor-names');
+    const dl = document.createElement('datalist');
+    dl.id = 'floor-names';
+    FLOOR_NAMES.forEach((n) => { const o = document.createElement('option'); o.value = n; dl.appendChild(o); });
+    form.appendChild(dl);
+    const level = field(form, 'Ebene (−1 Keller, 0 Erdgeschoss, 1 …)', 'number', LEVEL_GUESS[suggestion] ?? 0);
+    name.addEventListener('input', () => { if (name.value in LEVEL_GUESS) level.value = LEVEL_GUESS[name.value]; });
+    div(form, 'small muted', `Ausschnitt ${fmt(this.pending.w, 0)} × ${fmt(this.pending.h, 0)} (Seiteneinheiten)`);
+    const row = div(form, 'row');
+    const ok = button(row, 'Stockwerk anlegen', () => this.createFloor(name.value.trim(), Number(level.value)));
+    ok.classList.add('primary');
+    button(row, 'Abbrechen', () => { this.pending = null; this.renderPanel(); this.renderStage(); });
+    if (window.matchMedia?.('(pointer: fine)').matches) setTimeout(() => name.focus(), 0);
   }
 
   // Projekt sichern oder auf einen anderen Server übertragen (z. B. in die Home-Assistant-App)
@@ -309,8 +313,9 @@ export class PlansView {
       const t = el('text', { x: c.x + this.vp.px(6), y: c.y + fontSize * 1.2, class: 'crop-label', 'font-size': fontSize }, g);
       t.textContent = f.name;
       if (selected) {
+        const hr = this.vp.px(window.matchMedia?.('(pointer: coarse)').matches ? 11 : 7);
         for (const [corner, x, y] of [['nw', c.x, c.y], ['ne', c.x + c.w, c.y], ['sw', c.x, c.y + c.h], ['se', c.x + c.w, c.y + c.h]]) {
-          el('circle', { cx: x, cy: y, r: this.vp.px(7), class: 'handle', 'data-corner': corner, 'data-floor': f.id }, g);
+          el('circle', { cx: x, cy: y, r: hr, class: 'handle', 'data-corner': corner, 'data-floor': f.id }, g);
         }
       }
     }

@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.7.0
+- Phone and tablet: plan on top, tools below; hints and messages no longer cover the plan or buttons and close with a tap; larger touch targets; buttons for everything that needed a key or the mouse before / Handy und Tablet: Plan oben, Werkzeuge darunter; Hinweise und Meldungen verdecken nichts mehr und schließen per Tippen; größere Ziele für den Finger; Knöpfe für alles, was vorher eine Taste oder die Maus brauchte
+- Start page without a project: two clear choices, upload your plan or load the example house / Startseite ohne Projekt: zwei klare Wege, eigenen Plan hochladen oder Beispielhaus laden
+- Logo without German subtitle / Logo ohne deutschen Untertitel
+
 ## 1.6.0
 - Find a device: the list of rooms comes first, with a bar per room; the most likely room stands out, a click on a room in the plan selects it / Gerät suchen: Die Raumliste steht oben, mit Balken je Raum; der wahrscheinlichste Raum hebt sich ab, ein Klick auf einen Raum im Plan wählt ihn
 - Rooms tool: neighbouring rooms in different colours, names placed off the walls, origin of each name (own, Home Assistant, automatic), hint on how to split rooms / Werkzeug „Räume“: Nachbarräume in verschiedenen Farben, Namen nicht auf Wänden, Herkunft jedes Namens, Hinweis zum Trennen von Räumen

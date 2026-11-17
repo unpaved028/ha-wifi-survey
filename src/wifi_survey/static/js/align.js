@@ -202,6 +202,7 @@ export class AlignView {
       const n = this.pairs.length;
       const next = ['Punkt 1 im blauen Stockwerk', 'dieselbe Stelle im grauen Stockwerk', 'Punkt 2 im blauen Stockwerk', 'dieselbe Stelle im grauen Stockwerk'][n] || '';
       div(tools, 'small', next ? `Als Nächstes: ${next}` : '');
+      if (n) button(tools, 'Punktpaare zurücksetzen', () => { this.pairs = []; this.renderMarks(); this.renderPanel(); });
       div(tools, 'small muted', 'Gute Punkte: Außenecken des Hauses oder Ecken des Treppenhauses, möglichst weit auseinander.');
     }
 

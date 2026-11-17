@@ -17,6 +17,10 @@ import { StartView } from './start.js';
 
 const $ = (sel) => document.querySelector(sel);
 
+const TEXTS = {
+  closeHint: 'Tippen zum Schließen',
+};
+
 const ctx = {
   svg: $('#canvas'),
   panel: $('#panel'),
@@ -38,11 +42,14 @@ const ctx = {
   },
 
   toast(msg, kind = '') {
-    const node = document.createElement('div');
+    const node = document.createElement('button');
+    node.type = 'button';
     node.className = `toast ${kind}`;
     node.textContent = msg;
+    node.title = TEXTS.closeHint;
+    const timer = setTimeout(() => node.remove(), kind === 'error' ? 7000 : 3500);
+    node.addEventListener('click', () => { clearTimeout(timer); node.remove(); });
     $('#toasts').appendChild(node);
-    setTimeout(() => node.remove(), kind === 'error' ? 7000 : 3500);
   },
 
   hint(text) {
@@ -53,6 +60,7 @@ const ctx = {
     // Einmal weggeklickte Hinweise bleiben in dieser Sitzung verborgen
     ctx.hintEl.hidden = sessionStorage.getItem('ws-hints-off') === '1';
     ctx.hintEl.textContent = text;
+    ctx.hintEl.title = TEXTS.closeHint;
   },
 
   setSaveState(state, text) {
@@ -243,18 +251,25 @@ async function doRoute() {
       ctx.navigate('#/plaene');
       return;
     }
+    document.body.dataset.view = 'floor';
     ctx.view = new FloorView(ctx, floor);
   } else if (hash.startsWith('#/ausrichten')) {
+    document.body.dataset.view = 'align';
     ctx.view = new AlignView(ctx);
   } else if (hash.startsWith('#/suchen')) {
+    document.body.dataset.view = 'locate';
     ctx.view = new LocateView(ctx, hash.split('/')[2]);
   } else if (hash.startsWith('#/messen')) {
+    document.body.dataset.view = 'survey';
     ctx.view = new SurveyView(ctx, hash.split('/')[2] || sessionStorage.getItem('ws-eval-floor'));
   } else if (hash.startsWith('#/start')) {
+    document.body.dataset.view = 'start';
     ctx.view = new StartView(ctx);
   } else if (hash.startsWith('#/auswertung')) {
+    document.body.dataset.view = 'evaluate';
     ctx.view = new EvaluationView(ctx, hash.split('/')[2] || sessionStorage.getItem('ws-eval-floor'));
   } else {
+    document.body.dataset.view = 'plans';
     ctx.view = new PlansView(ctx);
   }
   await ctx.view.mount();

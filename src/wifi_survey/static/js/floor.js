@@ -9,6 +9,18 @@ import { section, div, button, field } from './plans.js';
 const SNAP_PX = 10;      // Fangradius in Bildschirmpixeln
 const UNCERTAIN = 0.75;  // automatisch erkannte Wände unter dieser Sicherheit werden markiert
 const SAVE_DELAY = 600;
+const isCoarse = () => window.matchMedia?.('(pointer: coarse)').matches;
+
+const TEXTS = {
+  addWallMode: '+ Weitere Wand wählen',
+  clearSel: 'Auswahl aufheben',
+  endDraw: 'Linienzug beenden',
+  drawActive: 'Linienzug läuft: nächste Ecke tippen oder beenden.',
+  finishArea: 'Umriss schließen',
+  cancel: 'Abbrechen',
+  deleteVertex: 'Ecke löschen',
+  showInPlan: 'Im Plan zeigen',
+};
 
 const TOOL_ICONS = {
   select: '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M13.64 21.97A1.5 1.5 0 0 1 11.7 21l-2.18-5.02-4.02 3.47V2.6l14 11.9h-5.82l2.19 5.03a1.5 1.5 0 0 1-.83 1.96l-1.4.48Z"/></svg>',
@@ -58,6 +70,8 @@ export class FloorView {
     this.devQuery = '';
     this.devKind = 'all';
     this.selection = new Set();
+    this.multiSelect = false;
+    this.shortPinned = false;
     this.tool = 'select';
     this.undoStack = [];
     this.redoStack = [];
@@ -264,6 +278,7 @@ export class FloorView {
     svg.classList.toggle('tool-split', tool === 'split');
     svg.classList.toggle('tool-area', tool === 'area');
     svg.classList.toggle('tool-rooms', tool === 'rooms');
+    if (tool !== 'select') this.multiSelect = false;
     if (tool !== 'devices') this.placing = null;
     if (tool === 'devices' && !this.catalog) this.loadCatalog();
     if (tool !== 'area') Object.assign(this, { outlineDraft: null, selVertex: null, selPoly: null, previewOthers: null });
@@ -369,7 +384,7 @@ export class FloorView {
       return true;
     }
     if (id) {
-      if (e.shiftKey) {
+      if (e.shiftKey || this.multiSelect) {
         if (this.selection.has(id)) this.selection.delete(id);
         else this.selection.add(id);
         this.renderAll();
@@ -480,6 +495,9 @@ export class FloorView {
     if (d.kind === 'device' || d.kind === 'vertex') {
       if (d.moved) this.commit(d.before);
       this.renderAll();
+      if (!d.moved && window.innerWidth <= 820) {
+        document.getElementById(d.kind === 'device' ? 'dev-panel' : 'area-panel')?.scrollIntoView({ block: 'nearest' });
+      }
       return;
     }
     if (d.moved) {
@@ -492,6 +510,9 @@ export class FloorView {
       this.commit(d.before);
     }
     this.renderAll();
+    if (!d.moved && d.kind === 'move' && window.innerWidth <= 820) {
+      document.getElementById('sel-panel')?.scrollIntoView({ block: 'nearest' });
+    }
   }
 
   cancel() {
@@ -513,6 +534,7 @@ export class FloorView {
     if (!this.draft?.start) {
       this.draft = { start: s.pt, cur: s.pt, snap: s.kind };
       this.renderDraft();
+      this.renderPanel();
       return true;
     }
     const a = this.draft.start;
@@ -522,6 +544,7 @@ export class FloorView {
     this.change(() => { this.walls.push(wall); });
     this.draft = { start: b, cur: b, snap: s.kind };
     this.renderDraft();
+    this.renderPanel();
     return true;
   }
 
@@ -529,6 +552,7 @@ export class FloorView {
     this.draft = null;
     this.ctx.hint(HINTS.draw);
     this.renderDraft();
+    this.renderPanel();
   }
 
   scaleClick(e, w) {
@@ -1027,6 +1051,7 @@ export class FloorView {
       if (!dr.pts.length || G.dist(p, dr.pts[dr.pts.length - 1]) > 1) dr.pts.push(p);
       dr.cur = p;
       this.renderArea();
+      this.renderPanel();
       return true;
     }
     const ref = t.dataset?.pv || t.dataset?.pm;
@@ -1166,16 +1191,18 @@ export class FloorView {
       this.outline.forEach((pg, pi) => {
         el('polygon', { points: G.pointsAttr(pg), class: `area-poly${this.selPoly === pi ? ' selected' : ''}`, 'data-poly': pi }, g);
       });
+      const midR = px(isCoarse() ? 8 : 4.5);
+      const vtxR = px(isCoarse() ? 10 : 6);
       this.outline.forEach((pg, pi) => {
         pg.forEach((q, vi) => {
           const n = pg[(vi + 1) % pg.length];
           if (G.dist(q, n) < px(30)) return;
           const m = G.mid(q, n);
-          el('circle', { cx: m[0], cy: m[1], r: px(4.5), class: 'area-mid', 'data-pm': `${pi}:${vi}` }, top);
+          el('circle', { cx: m[0], cy: m[1], r: midR, class: 'area-mid', 'data-pm': `${pi}:${vi}` }, top);
         });
         pg.forEach((q, vi) => {
           const sel = this.selVertex?.pi === pi && this.selVertex?.vi === vi;
-          el('circle', { cx: q[0], cy: q[1], r: px(6), class: `handle area-vertex${sel ? ' selected' : ''}`, 'data-pv': `${pi}:${vi}` }, top);
+          el('circle', { cx: q[0], cy: q[1], r: vtxR, class: `handle area-vertex${sel ? ' selected' : ''}`, 'data-pv': `${pi}:${vi}` }, top);
         });
       });
     }
@@ -1188,6 +1215,7 @@ export class FloorView {
 
   renderAreaPanel(p) {
     const s = section(p, 'Hausfläche');
+    s.id = 'area-panel';
     if (!this.ppm) {
       div(s, 'callout', 'Für die Hausfläche braucht das Stockwerk einen Maßstab (Werkzeug „Maßstab“).');
       return;
@@ -1195,6 +1223,16 @@ export class FloorView {
     const info = this.outlineInfo;
     if (!info) { div(s, 'small muted', 'Lade Hausfläche …'); return; }
     if (info.error) { div(s, 'callout', info.error); return; }
+    if (this.outlineDraft) {
+      const box = div(s, 'callout');
+      div(box, 'small', 'Ecken auf den Plan tippen. Ab 3 Ecken lässt sich der Umriss schließen.');
+      const act = div(box, 'row');
+      act.style.marginTop = '6px';
+      const fin = button(act, TEXTS.finishArea, () => this.finishOutline());
+      fin.classList.add('primary');
+      fin.disabled = this.outlineDraft.pts.length < 3;
+      button(act, TEXTS.cancel, () => { this.outlineDraft = null; this.ctx.hint(HINTS.area); this.renderAll(); });
+    }
     const m2 = (v) => (v === null || v === undefined ? '–' : `${G.fmt(v, 1)} m²`);
     if (this.outline) {
       const n = this.outline.length;
@@ -1203,7 +1241,8 @@ export class FloorView {
       div(s, 'small muted', `Automatisch wären es ${m2(info.auto?.area_m2)}.`);
       const row = div(s, 'row');
       button(row, 'Weitere Fläche zeichnen', () => this.startOutline());
-      if (this.selPoly !== null) button(row, 'Fläche löschen', () => this.deleteAreaSelection()).classList.add('danger');
+      if (this.selVertex) button(row, TEXTS.deleteVertex, () => this.deleteAreaSelection()).classList.add('danger');
+      else if (this.selPoly !== null) button(row, 'Fläche löschen', () => this.deleteAreaSelection()).classList.add('danger');
       button(s, 'Zurück zur automatischen Hausfläche', () => this.resetOutline());
     } else {
       div(s, '', `Automatisch: ${m2(info.area_m2)}`);
@@ -1222,7 +1261,6 @@ export class FloorView {
       b.addEventListener('mouseenter', () => { this.previewOthers = o.polygons; this.renderArea(); });
       b.addEventListener('mouseleave', () => { this.previewOthers = null; this.renderArea(); });
     }
-    if (this.outlineDraft) div(s, 'callout', 'Umriss zeichnen: Klick setzt Ecken, Enter oder Klick auf die erste Ecke schließt.');
     div(s, 'small muted', 'Gezählt wird die Fläche innerhalb der Umrisse ohne Wände; sie geht in Abdeckung und Suche ein. '
       + 'Grüne Punkte: Messpunkte und Fundorte.');
   }
@@ -1273,7 +1311,7 @@ export class FloorView {
     for (const w of this.walls) {
       el('line', { x1: w.a[0], y1: w.a[1], x2: w.b[0], y2: w.b[1], class: 'hit', 'data-id': w.id, 'stroke-width': Math.max(w.thickness_px, minHit) }, hits);
     }
-    const r = this.vp.px(7);
+    const r = this.vp.px(isCoarse() ? 11 : 7);
     const showHandles = this.tool === 'select' && this.selection.size === 1;
     for (const w of this.walls) {
       if (!this.selection.has(w.id)) continue;
@@ -1367,7 +1405,11 @@ export class FloorView {
     const s = section(p, 'Geräte platzieren');
     if (!this.catalog) { div(s, 'small muted', 'Lade Geräteliste …'); return; }
     const cat = this.catalog;
-    if (this.placing) div(s, 'callout', `Klick auf den Plan setzt „${this.placing.label}“. Esc bricht ab.`);
+    if (this.placing) {
+      const box = div(s, 'callout row');
+      div(box, 'small', `Klick auf den Plan setzt „${this.placing.label}“.`).style.flex = '1';
+      button(box, TEXTS.cancel, () => { this.placing = null; this.ctx.hint(HINTS.devices); this.renderPanel(); });
+    }
     if (!cat.devices.length) {
       div(s, 'small muted', 'Noch kein Messlauf: Die Geräteliste aus FRITZ!Box und Shellys ist leer. Eigene Geräte lassen sich trotzdem platzieren.');
       this.renderManualPanel(p);
@@ -1428,6 +1470,7 @@ export class FloorView {
     const d = this.devices.find((x) => x.id === this.selDevice);
     if (!d) return;
     const s = section(p, 'Ausgewähltes Gerät');
+    s.id = 'dev-panel';
     if (d.key.startsWith('manual:')) {
       this.renderManualDevice(s, d);
       return;
@@ -1519,24 +1562,6 @@ export class FloorView {
     const scrollTop = p.scrollTop;
     p.replaceChildren();
 
-    const head = section(p, 'Stockwerk');
-    const nameRow = div(head, 'grid2');
-    const name = field(nameRow, 'Name', 'text', floor.name);
-    const level = field(nameRow, 'Ebene', 'number', floor.level);
-    const saveMeta = async () => {
-      const body = { name: name.value.trim() || floor.name, level: Math.round(G.parseNumber(level.value) || 0) };
-      try {
-        const f = await api.updateFloor(floor.id, body);
-        Object.assign(floor, { name: f.name, level: f.level });
-        await ctx.refreshProject();
-      } catch (e) { ctx.toast(e.message, 'error'); }
-    };
-    name.addEventListener('change', saveMeta);
-    level.addEventListener('change', saveMeta);
-    const autoCount = this.walls.filter((w) => w.source === 'auto').length;
-    const scaleNote = this.ppm ? ` · 1 m = ${G.fmt(this.ppm, 1)} px` : '';
-    div(head, 'small muted', `${this.walls.length} Wände · ${autoCount} automatisch · ${this.walls.length - autoCount} bearbeitet${scaleNote}`);
-
     const tools = section(p, 'Werkzeug');
     const tb = div(tools, 'toolbar');
     for (const [tool, label, key] of [['select', 'Auswählen', 'V'], ['draw', 'Wand zeichnen', 'W'], ['split', 'Teilen', 'T'],
@@ -1578,7 +1603,7 @@ export class FloorView {
       }
     }
 
-    // Auswahl oder Vorgaben für neue Wände
+    // Auswahl oder Vorgaben für das aktive Werkzeug (auf dem Handy ohne Scrollen erreichbar)
     const selected = this.walls.filter((w) => this.selection.has(w.id));
     if (this.selDevice) this.renderDevicePanel(p);
     if (this.tool === 'area') this.renderAreaPanel(p);
@@ -1630,16 +1655,35 @@ export class FloorView {
       this.opts.showDeviceLabels = v; this.saveOpts(); this.renderDevices();
     });
 
+    const head = section(p, 'Stockwerk');
+    const nameRow = div(head, 'grid2');
+    const name = field(nameRow, 'Name', 'text', floor.name);
+    const level = field(nameRow, 'Ebene', 'number', floor.level);
+    const saveMeta = async () => {
+      const body = { name: name.value.trim() || floor.name, level: Math.round(G.parseNumber(level.value) || 0) };
+      try {
+        const f2 = await api.updateFloor(floor.id, body);
+        Object.assign(floor, { name: f2.name, level: f2.level });
+        await ctx.refreshProject();
+      } catch (e) { ctx.toast(e.message, 'error'); }
+    };
+    name.addEventListener('change', saveMeta);
+    level.addEventListener('change', saveMeta);
+    const autoCount = this.walls.filter((w) => w.source === 'auto').length;
+    const scaleNote = this.ppm ? ` · 1 m = ${G.fmt(this.ppm, 1)} px` : '';
+    div(head, 'small muted', `${this.walls.length} Wände · ${autoCount} automatisch · ${this.walls.length - autoCount} bearbeitet${scaleNote}`);
+
     const help = document.createElement('details');
     help.className = 'more';
     help.innerHTML = '<summary>Tasten &amp; Kürzel</summary>';
-    div(help, 'small muted', 'V Auswählen · W Zeichnen · T Teilen · M Maßstab · G Geräte · H Hausfläche · F Ganzes Bild · Z Zusammenführen · E Ecke schließen · N nächste unsichere Wand · Entf Löschen · Esc Abbrechen · Strg+A alles · Strg+Z/Y Rückgängig/Wiederholen · Mausrad Zoom · Leertaste/mittlere Taste + Ziehen verschiebt');
+    div(help, 'small muted', 'V Auswählen · W Zeichnen · T Teilen · M Maßstab · G Geräte · H Hausfläche · R Räume · F Ganzes Bild · Z Zusammenführen · E Ecke schließen · N nächste unsichere Wand · Entf Löschen · Esc Abbrechen · Strg+A alles · Strg+Z/Y Rückgängig/Wiederholen · Mausrad Zoom · Leertaste/mittlere Taste + Ziehen verschiebt');
     p.appendChild(help);
     p.scrollTop = scrollTop;
   }
 
   renderSelectionPanel(p, sel) {
     const s = section(p, sel.length === 1 ? 'Ausgewählte Wand' : `${sel.length} Wände ausgewählt`);
+    s.id = 'sel-panel';
     const unit = this.ppm ? 'cm' : 'px';
     const toUnit = (px) => (this.ppm ? (px / this.ppm) * 100 : px);
     const fromUnit = (v) => (this.ppm ? (v / 100) * this.ppm : v);
@@ -1684,6 +1728,8 @@ export class FloorView {
       div(s, 'small muted', 'Schnellwahl Dicke in cm');
     }
     const ops = div(s, 'row');
+    const multi = button(ops, TEXTS.addWallMode, () => { this.multiSelect = !this.multiSelect; this.renderPanel(); });
+    if (this.multiSelect) multi.classList.add('active');
     if (sel.length >= 2) {
       const m = button(ops, 'Zusammenführen', () => this.mergeSelected());
       m.title = 'Stücke auf einer Linie zu einer Wand verbinden (Taste Z)';
@@ -1698,6 +1744,7 @@ export class FloorView {
     if (sel.some((w) => w.source === 'auto')) {
       button(row, 'Als geprüft markieren', () => this.change(() => { for (const w of sel) this.touch(w); }));
     }
+    button(row, TEXTS.clearSel, () => { this.selection.clear(); this.multiSelect = false; this.renderAll(); });
     const del = button(row, 'Löschen', () => this.deleteSelection());
     del.classList.add('danger');
   }
@@ -1733,16 +1780,26 @@ export class FloorView {
     const btn = button(row, '', () => {
       const doomed = new Set(this.shortWalls().map((w) => w.id));
       if (!doomed.size) return;
+      this.shortPinned = false;
       this.highlightShort = false;
       this.change(() => { this.walls = this.walls.filter((w) => !doomed.has(w.id)); });
       this.ctx.toast(`${doomed.size} kurze Stücke gelöscht (Strg+Z macht es rückgängig)`, 'ok');
     });
     btn.style.alignSelf = 'end';
+    const act = div(s, 'row');
+    const peek = button(act, TEXTS.showInPlan, () => {
+      this.shortPinned = !this.shortPinned;
+      this.highlightShort = this.shortPinned;
+      this.renderWalls();
+      this.renderPanel();
+    });
+    if (this.shortPinned) peek.classList.add('active');
     const update = () => {
       const n = this.shortWalls().length;
       btn.textContent = n ? `${n} Stücke löschen` : 'Keine Stücke';
       btn.disabled = !n;
       btn.classList.toggle('danger', n > 0);
+      peek.disabled = !n;
     };
     inp.addEventListener('input', () => {
       const v = G.parseNumber(inp.value);
@@ -1752,7 +1809,7 @@ export class FloorView {
       update();
       if (this.highlightShort) this.renderWalls();
     });
-    const showShort = (on) => { this.highlightShort = on; this.renderWalls(); };
+    const showShort = (on) => { this.highlightShort = on || this.shortPinned; this.renderWalls(); };
     btn.addEventListener('mouseenter', () => showShort(true));
     btn.addEventListener('mouseleave', () => showShort(false));
     btn.addEventListener('focus', () => showShort(true));
@@ -1760,17 +1817,10 @@ export class FloorView {
     inp.addEventListener('focus', () => showShort(true));
     inp.addEventListener('blur', () => showShort(false));
     update();
-    div(s, 'small muted', 'Beim Bearbeiten oder Zeigen auf den Knopf werden die betroffenen Stücke rot markiert.');
+    div(s, 'small muted', 'Mit „Im Plan zeigen“ werden die betroffenen Stücke rot markiert.');
   }
 
-  renderNewWallPanel(p) {
-    this.renderCleanupPanel(p);
-    const pick = section(p, 'Auswählen');
-    const row = div(pick, 'row');
-    button(row, 'Außenwände', () => this.selectExterior()).title = 'Wände, die an den Außenraum grenzen (Vorschlag, bitte prüfen)';
-    button(row, 'Alle Wände', () => { this.selection = new Set(this.walls.map((w) => w.id)); this.setTool('select', false); this.renderAll(); });
-    div(pick, 'small muted', 'Danach Material oder Dicke für alle ausgewählten Wände auf einmal setzen. Umschalt+Klick nimmt einzelne Wände heraus oder hinzu.');
-
+  renderNewWallFields(p) {
     const s = section(p, 'Neue Wände');
     const grid = div(s, 'grid2');
     const unit = this.ppm ? 'cm' : 'px';
@@ -1791,6 +1841,29 @@ export class FloorView {
     matLabel.appendChild(mat);
     grid.appendChild(matLabel);
     checkbox(s, 'Winkel in 45°-Schritten (Alt: frei)', this.opts.angleSnap, (v) => { this.opts.angleSnap = v; this.saveOpts(); });
+  }
+
+  renderNewWallPanel(p) {
+    if (this.tool === 'draw') {
+      if (this.draft?.start) {
+        const box = div(section(p, 'Zeichnen'), 'callout row');
+        div(box, 'small', TEXTS.drawActive).style.flex = '1';
+        button(box, TEXTS.endDraw, () => this.endDraw()).classList.add('primary');
+      }
+      this.renderNewWallFields(p);
+    }
+    const pick = section(p, 'Auswählen');
+    const row = div(pick, 'row');
+    const multi = button(row, TEXTS.addWallMode, () => {
+      this.multiSelect = !this.multiSelect;
+      this.setTool('select');
+    });
+    if (this.multiSelect) multi.classList.add('active');
+    button(row, 'Außenwände', () => this.selectExterior()).title = 'Wände, die an den Außenraum grenzen (Vorschlag, bitte prüfen)';
+    button(row, 'Alle Wände', () => { this.selection = new Set(this.walls.map((w) => w.id)); this.setTool('select', false); this.renderAll(); });
+    div(pick, 'small muted', 'Danach Material oder Dicke für alle ausgewählten Wände auf einmal setzen oder Ecken verbinden.');
+    this.renderCleanupPanel(p);
+    if (this.tool !== 'draw') this.renderNewWallFields(p);
   }
 }
 

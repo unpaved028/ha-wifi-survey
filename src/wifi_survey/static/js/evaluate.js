@@ -285,16 +285,6 @@ export class EvaluationView {
     sel.addEventListener('change', () => ctx.navigate(`#/auswertung/${sel.value}`));
     head.appendChild(sel);
 
-    const meas = section(p, 'Messlauf');
-    if (this.ev?.measured_at) {
-      const when = new Date(this.ev.measured_at).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
-      div(meas, 'small', `Messwerte vom ${when}`);
-    } else if (this.ev) {
-      div(meas, 'small', 'Noch kein Messlauf: Planung mit Startwerten.');
-    }
-    const mb = button(meas, 'Neu messen', () => this.measure(mb));
-    div(meas, 'small muted', 'Fragt FRITZ!Box und alle Shellys ab, inklusive WLAN-Scan. Dauert etwa eine Minute.');
-
     if (this.error) {
       div(section(p, 'Hinweis'), 'callout', this.error.includes('Maßstab')
         ? `${this.error} Stockwerk öffnen und mit dem Werkzeug „Maßstab“ kalibrieren.` : this.error);
@@ -356,14 +346,24 @@ export class EvaluationView {
       }
     }
 
-    this.renderHouse(p);
-
     const hints = section(p, 'Hinweise');
     if (!ev.findings.length) div(hints, 'small muted', 'Keine Auffälligkeiten.');
     for (const f of ev.findings) div(hints, `finding ${f.level}`, f.text);
 
     this.renderSim(p);
     this.renderRecommend(p);
+
+    const meas = section(p, 'Messlauf');
+    if (this.ev?.measured_at) {
+      const when = new Date(this.ev.measured_at).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+      div(meas, 'small', `Messwerte vom ${when}`);
+    } else if (this.ev) {
+      div(meas, 'small', 'Noch kein Messlauf: Planung mit Startwerten.');
+    }
+    const mb = button(meas, 'Neu messen', () => this.measure(mb));
+    div(meas, 'small muted', 'Fragt FRITZ!Box und alle Shellys ab, inklusive WLAN-Scan. Dauert etwa eine Minute.');
+
+    this.renderHouse(p);
 
     const devs = section(p, 'Geräte (gemessen)');
     const sorted = [...ev.devices].sort((x, y) => (x.connected?.rssi ?? 0) - (y.connected?.rssi ?? 0));

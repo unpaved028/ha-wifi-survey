@@ -1,6 +1,6 @@
 [project]
 name = "wifi-survey"
-version = "1.6.0"
+version = "1.7.0"
 description = "WLAN-Ausleuchtung für FRITZ!Box-Mesh mit Repeatern"
 readme = "README.md"
 requires-python = ">=3.13"

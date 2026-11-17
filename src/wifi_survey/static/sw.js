@@ -1,6 +1,6 @@
 // Service Worker: App-Gerüst offline vorhalten, immer zuerst das Netz fragen (keine veralteten Stände).
 // Pfade relativ zum Geltungsbereich: die Oberfläche läuft auch unter einem Unterpfad (Ingress von Home Assistant).
-const CACHE = 'wifi-survey-v10';
+const CACHE = 'wifi-survey-v11';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/api.js', 'js/geom.js', 'js/viewport.js',
   'js/plans.js', 'js/floor.js', 'js/align.js', 'js/evaluate.js', 'js/survey.js', 'js/locate.js', 'js/start.js',
   'manifest.webmanifest',
